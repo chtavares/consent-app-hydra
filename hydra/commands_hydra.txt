@@ -1,0 +1,83 @@
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+hydra v0.11.12
+
+HTTP
+
+docker network create hydraguide
+
+//start the postgres
+docker run \
+  --network hydraguide \
+  --name ory-hydra-example--postgres \
+  -e POSTGRES_USER=hydra \
+  -e POSTGRES_PASSWORD=secret \
+  -e POSTGRES_DB=hydra \
+  -d --rm postgres:9.6
+
+export SYSTEM_SECRET='this_needs_to_be_the_same_always_and_also_very_$3cuR3-._'
+export DATABASE_URL=postgres://hydra:secret@ory-hydra-example--postgres:5432/hydra?sslmode=disable
+
+// migrate the database
+docker run -it --rm \
+  --network hydraguide \
+  hydra:local \
+  migrate sql $DATABASE_URL
+
+// run the hydra server http --force-http
+docker run -it --rm \
+  --name ory-hydra-example--hydra \
+  --network hydraguide \
+  -p 9000:4444 \
+  -e SYSTEM_SECRET=$SYSTEM_SECRET \
+  -e DATABASE_URL=$DATABASE_URL \
+  -e ISSUER=http://localhost:9000/ \
+  -e CONSENT_URL=http://localhost:3000/consent \
+  -e FORCE_ROOT_CLIENT_CREDENTIALS=admin:demo-password \
+  hydra:local
+
+// generate token and verify
+docker run --rm -it \
+  -e CLUSTER_URL=http://ory-hydra-example--hydra:4444 \
+  -e CLIENT_ID=admin \
+  -e CLIENT_SECRET=demo-password \
+  --network hydraguide \
+  hydra:local \
+  token client --skip-tls-verify
+
+docker run --rm -it \
+  -e CLUSTER_URL=http://ory-hydra-example--hydra:4444 \
+  -e CLIENT_ID=admin \
+  -e CLIENT_SECRET=demo-password \
+  -e TOKEN=$token \
+  --network hydraguide \
+  hydra:local \
+  token validate --skip-tls-verify
+
+//create client to hydra
+  docker run --rm -it \
+  -e CLUSTER_URL=http://ory-hydra-example--hydra:4444 \
+  -e CLIENT_ID=admin \
+  -e CLIENT_SECRET=demo-password \
+  --network hydraguide \
+  hydra:local \
+   clients create --skip-tls-verify \
+    --id test11 \
+    --secret user_secret \
+    --name "Consent App Client" \
+    --grant-types client_credentials,authorization_code,refresh_token,implicit \
+    --response-types token,code,id_token \
+    --allowed-scopes hydra.consent,openid,offline,hydra.clients \
+    --callbacks http://localhost:1323/callback
+
+  docker run --rm -it \
+  -e CLUSTER_URL=http://ory-hydra-example--hydra:4444 \
+  -e CLIENT_ID=admin \
+  -e CLIENT_SECRET=demo-password \
+  --network hydraguide \
+  hydra:local \
+   clients create --skip-tls-verify \
+    --id test \
+    --secret user_secret \
+    --grant-types client_credentials \
+    --response-types code \
+    --allowed-scopes offline
