@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/ory/hydra/sdk/go/hydra/swagger"
+
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo"
 	"github.com/ory/hydra/sdk/go/hydra"
-	"github.com/ory/hydra/sdk/go/hydra/swagger"
 )
 
 var store = sessions.NewCookieStore([]byte("salada"))
@@ -24,69 +25,70 @@ type User struct {
 }
 
 func (w Worker) HandlerConsent(c echo.Context) error {
-
-	consentRequestID := c.QueryParam("consent")
+	consentRequestID := c.QueryParam("consent_challenge")
 	if consentRequestID == "" {
 		return c.JSON(http.StatusBadRequest, "Consent endpoint was called without a consent request id")
 
 	}
-	consentRequest, response, err := w.Client.GetOAuth2ConsentRequest(consentRequestID)
+	consentRequest, response, err := w.Client.GetConsentRequest(consentRequestID)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, "The consent request endpoint does not respond")
 
 	} else if response.StatusCode != http.StatusOK {
 		return c.JSON(http.StatusBadRequest, "Consent request endpoint")
+	}
 
+	completeRequest, _, err := w.Client.AcceptConsentRequest(consentRequest.Challenge, swagger.AcceptConsentRequest{})
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, "The accept consent request endpoint encountered a network error")
+	}
+
+	return c.Redirect(http.StatusMovedPermanently, completeRequest.RedirectTo)
+}
+
+func (w Worker) HandlerLogin(c echo.Context) error {
+	loginChallengeID := c.QueryParam("login_challenge")
+	if loginChallengeID == "" {
+		return c.JSON(http.StatusBadRequest, "Consent endpoint was called without a consent request id")
 	}
 
 	request := c.Request()
 	user := authenticated(request)
 	if user == "" {
-		return c.Redirect(http.StatusMovedPermanently, "/login?consent="+consentRequestID)
+		recv := &User{
+			Name:     "userid",
+			Password: "userpassword",
+		}
+		if recv.Name != "userid" || recv.Password != "userpassword" {
+			return c.JSON(http.StatusBadRequest, "User or Password incorrect")
+		}
 
+		request = c.Request()
+		response := c.Response()
+		session, _ := store.Get(request, sessionName)
+		session.Values["user"] = "userid"
+
+		if err := store.Save(request, response.Writer, session); err != nil {
+			return c.JSON(http.StatusBadRequest, "error to save section")
+
+		}
 	}
-	var s []string
-	s = append(s, "authorization_code")
-	response, err = w.Client.AcceptOAuth2ConsentRequest(consentRequestID, swagger.ConsentRequestAcceptance{
+
+	loginRequest, _, err := w.Client.GetLoginRequest(loginChallengeID)
+	if err != nil {
+		fmt.Println(loginRequest)
+		return c.JSON(http.StatusBadRequest, "Error get login request")
+	}
+
+	completedRequest, _, err := w.Client.AcceptLoginRequest(loginRequest.Challenge, swagger.AcceptLoginRequest{
 		Subject:     user,
-		GrantScopes: s,
+		RememberFor: 0,
 	})
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, "The accept consent request endpoint encountered a network error")
-	} else if response.StatusCode != http.StatusNoContent {
-		return c.JSON(http.StatusBadRequest, "ERRROR")
-
+		return c.JSON(http.StatusBadRequest, "Error accept login request")
 	}
 
-	return c.Redirect(http.StatusMovedPermanently, consentRequest.RedirectUrl)
-}
-
-func (w Worker) HandlerLogin(c echo.Context) error {
-
-	consentRequestID := c.QueryParam("consent")
-	if consentRequestID == "" {
-		return c.JSON(http.StatusBadRequest, "Consent endpoint was called without a consent request id")
-
-	}
-	recv := &User{
-		Name:     "user_id",
-		Password: "user_password",
-	}
-	if recv.Name != "user_id" || recv.Password != "user_password" {
-		return c.JSON(http.StatusBadRequest, "User or Password incorrect")
-	}
-
-	request := c.Request()
-	response := c.Response()
-	session, _ := store.Get(request, sessionName)
-	session.Values["user"] = recv.Name + recv.Password
-	fmt.Println(session.Values["user"])
-	if err := store.Save(request, response.Writer, session); err != nil {
-		return c.JSON(http.StatusBadRequest, "error to save section")
-
-	}
-
-	return c.Redirect(http.StatusMovedPermanently, "/consent?consent="+consentRequestID)
+	return c.Redirect(http.StatusMovedPermanently, completedRequest.RedirectTo)
 }
 
 func authenticated(r *http.Request) string {

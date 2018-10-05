@@ -10,11 +10,13 @@ import (
 
 func setupTestingHydra() (*hydra.CodeGenSDK, error) {
 	// client-ID hydra
+
 	client, err := hydra.NewSDK(&hydra.Configuration{
-		ClientID:     "admin",
-		ClientSecret: "demo-password",
-		EndpointURL:  "http://localhost:9000",
-		Scopes:       []string{"hydra.*"},
+		ClientID:     "userid",
+		ClientSecret: "userpassword",
+		PublicURL:    "http://localhost:9000",
+		AdminURL:     "http://localhost:9001",
+		Scopes:       []string{"offline"},
 	})
 
 	return client, err
