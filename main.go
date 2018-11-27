@@ -9,14 +9,12 @@ import (
 )
 
 func setupTestingHydra() (*hydra.CodeGenSDK, error) {
-	// client-ID hydra
-
 	client, err := hydra.NewSDK(&hydra.Configuration{
-		ClientID:     "userid",
-		ClientSecret: "userpassword",
+		ClientID:     "auth-server",
+		ClientSecret: "auth-secret",
 		PublicURL:    "http://localhost:9000",
 		AdminURL:     "http://localhost:9001",
-		Scopes:       []string{"offline"},
+		Scopes:       []string{"hydra.clients"},
 	})
 
 	return client, err
@@ -32,8 +30,8 @@ func main() {
 
 	e := echo.New()
 
-	e.GET("/consent", worker.HandlerConsent)
-	e.GET("/login", worker.HandlerLogin)
+	e.GET("/auth/consent", worker.HandlerConsent)
+	e.GET("/auth/login", worker.HandlerLogin)
 
 	e.Logger.Fatal(e.Start(":3000"))
 }

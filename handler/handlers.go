@@ -1,7 +1,8 @@
 package handler
 
 import (
-	"fmt"
+	"bytes"
+	"encoding/json"
 	"net/http"
 
 	"github.com/ory/hydra/sdk/go/hydra/swagger"
@@ -11,7 +12,7 @@ import (
 	"github.com/ory/hydra/sdk/go/hydra"
 )
 
-var store = sessions.NewCookieStore([]byte("salada"))
+var store = sessions.NewCookieStore([]byte("jaaiuohtrhua"))
 
 const sessionName = "authentication"
 
@@ -22,6 +23,13 @@ type Worker struct {
 type User struct {
 	Name     string
 	Password string
+}
+
+type Rules struct {
+	ID          string   `json:"id"`
+	Description string   `json:"description"`
+	Subjects    []string `json:"subjects"`
+	Effect      string   `json:"effect"`
 }
 
 func (w Worker) HandlerConsent(c echo.Context) error {
@@ -38,7 +46,14 @@ func (w Worker) HandlerConsent(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, "Consent request endpoint")
 	}
 
-	completeRequest, _, err := w.Client.AcceptConsentRequest(consentRequest.Challenge, swagger.AcceptConsentRequest{})
+	completeRequest, _, err := w.Client.AcceptConsentRequest(consentRequest.Challenge, swagger.AcceptConsentRequest{
+		Session: swagger.ConsentRequestSession{
+			AccessToken: map[string]interface{}{
+				"test": "testing",
+				"user": "claudio",
+			},
+		},
+	})
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, "The accept consent request endpoint encountered a network error")
 	}
@@ -52,14 +67,39 @@ func (w Worker) HandlerLogin(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, "Consent endpoint was called without a consent request id")
 	}
 
+	client := &http.Client{}
+	resp, _ := client.Get("http://localhost:4466/policies/test")
+
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(resp.Body)
+
+	rules := &Rules{}
+	err := json.Unmarshal(buf.Bytes(), rules)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, "Error parse json")
+	}
+
+	var val int64
+	val = -1
+
+	for i := range rules.Subjects {
+		if rules.Subjects[i] == "claudio" {
+			val = 0
+			break
+		}
+	}
+	if val == -1 {
+		return c.JSON(http.StatusBadRequest, "no rules for this member")
+	}
+
 	request := c.Request()
 	user := authenticated(request)
 	if user == "" {
 		recv := &User{
-			Name:     "userid",
+			Name:     "claudio",
 			Password: "userpassword",
 		}
-		if recv.Name != "userid" || recv.Password != "userpassword" {
+		if recv.Name != "claudio" || recv.Password != "userpassword" {
 			return c.JSON(http.StatusBadRequest, "User or Password incorrect")
 		}
 
@@ -76,7 +116,6 @@ func (w Worker) HandlerLogin(c echo.Context) error {
 
 	loginRequest, _, err := w.Client.GetLoginRequest(loginChallengeID)
 	if err != nil {
-		fmt.Println(loginRequest)
 		return c.JSON(http.StatusBadRequest, "Error get login request")
 	}
 
